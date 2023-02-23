@@ -40,12 +40,21 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
     [Range(0, 1)]
     [SerializeField] float matchBias = 0.5f;
 
+    [Range(0, 1)]
+    [SerializeField] float alphaThreshold = 0.1f;
+
+    [SerializeField] float minimumEncounteredAlphaValue = 1;
+    [SerializeField] bool isAccepted;
+
     public string textFromImage;
     public bool analyse;
     public bool split;
     public bool splitAnimate;
     public bool detectObject;
     public bool detectObjectAnim;
+
+    public bool stop;
+    public bool unLock;
 
     public string objectToDetect;
 
@@ -76,6 +85,8 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
     public bool noSpawn;
 
     public bool matchOnlyColorsObjectHave;
+
+    public bool useLock;
 
     bool found;
 
@@ -115,6 +126,13 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
         {
             detectObjectAnim = false;
             StartCoroutine(DetectObject(LoadPNG(objectToDetect)));
+        }
+
+        if (stop)
+        {
+            stop = false;
+
+            StopAllCoroutines();
         }
     }
 
@@ -815,6 +833,8 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
 
     IEnumerator DetectObject(Texture2D objectToDetect)
     {
+        bool showDebug = false; 
+
         found = false;
 
         Texture2D imageToAnalyse = LoadPNG(imagePath);
@@ -850,6 +870,12 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
             for (int y = 0; y < objectToDetect.height; y++)
             {
                 Color currentPixel = objectToDetect.GetPixel(x, y);
+
+                if (currentPixel.a <= alphaThreshold)
+                {
+                    currentPixel = Color.white;
+                    currentPixel.a = 0;
+                }
 
                 if (temp.ContainsKey(currentPixel))
                 {
@@ -891,6 +917,7 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
             breakForce = false;
             for (int y = 0; y < imageToAnalyse.height; y++)
             {
+                isAccepted = false;
                 breakForce = false;
                 total = 0;
                 matches = 0;
@@ -907,8 +934,6 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
                 {
                     cols = new List<Color>();
 
-                    Dictionary<Color, float> temp = new Dictionary<Color, float>();
-
                     for (int y1 = y; y1 < y + objectToDetectPlaceholder.y; y1++)
                     {
                         total++;
@@ -919,17 +944,38 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
 
                         Color col = objectToDetect.GetPixel(pos.x, pos.y);
 
-                        if (currentPixel == col || (col.a == 0 && !colorsImageHave.Contains(currentPixel)))
+                        if (minimumEncounteredAlphaValue > col.a)
+                        {
+                            minimumEncounteredAlphaValue = col.a;
+                        }
+
+                        if (currentPixel == Color.white)
+                        {
+                            showDebug = true;
+                        }
+                        else
+                        {
+                            showDebug = false;
+                        }
+
+                        if (currentPixel == col)
                         {
                             matches++;
                             isMatch = true;
                         }
                         else
                         {
-                            if (matchOnlyColorsObjectHave && !colorsImageHave.Contains(currentPixel) /*&& (col.a == 0 && colorsImageHave.Contains(currentPixel) || col.a != 0)*/)
+                            if (col.a <= alphaThreshold && !colorsImageHave.Contains(currentPixel))
+                            {
+                                isAccepted = true;
+
+                                matches++;
+                                isMatch = true;
+                            }
+                            else if (matchOnlyColorsObjectHave && !colorsImageHave.Contains(currentPixel) && col.a > alphaThreshold /*&& (col.a == 0 && colorsImageHave.Contains(currentPixel) || col.a != 0)*/)
                             {
                                 breakForce = true;
-                                break;
+                                break; 
                             }
                         }
                     }
@@ -945,16 +991,31 @@ public class ImageTextRecognitionAIEngine : MonoBehaviour
                     }
                 }
 
+                if (isAccepted)
+                {
+                    //breakForce = false;
+                }
+
                 //check if composition matches
                 float ratio = ((matches + 0f) / (total + 0f));
                 if (ratio >= matchBias && !breakForce)
                 {
                     found = true;
-                    
+                      
                     Debug.Log("Object Found!");
 
                     StopAllCoroutines();
                     yield break;
+                }
+                else if(isAccepted && showDebug)
+                {
+                    Debug.Log("Ratio " + ratio);
+                }
+
+                if (useLock && isAccepted && showDebug)
+                {
+                    yield return new WaitUntil(() => unLock);
+                    unLock = false;
                 }
             }
 
